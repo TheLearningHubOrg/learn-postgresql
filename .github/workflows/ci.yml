@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The port PostgreSQL listens on, EXPOSEd in the Dockerfile and published by the docker job.
+  APP_PORT: "5432"
+
+jobs:
+  test:
+    name: Lint and run the SQL tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: ShellCheck the test runner
+        run: shellcheck --severity=warning scripts/*.sh
+
+      - name: Install the psql client if the runner lacks it
+        run: |
+          if ! command -v psql >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y postgresql-client
+          fi
+          psql --version
+
+      - name: Show the server version
+        run: psql -X -d postgres -tAc 'SELECT version()'
+
+      - name: Build the schema and run the SQL tests
+        run: bash scripts/run-tests.sh
+
+  docker:
+    name: Image builds, seeds and accepts connections
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+
+      # The verify stage runs the same SQL tests inside the build.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: guide-app:ci
+
+      - name: Start the container and wait until it is healthy
+        run: |
+          docker run -d --name guide-app -e POSTGRES_PASSWORD=ci \
+            -p "${APP_PORT}:${APP_PORT}" guide-app:ci
+          for _ in $(seq 1 30); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' guide-app)"
+            [ "$status" = healthy ] && break
+            sleep 2
+          done
+          echo "container health: $status"
+          [ "$status" = healthy ]
+
+      - name: Connect through the published port and query the seed data
+        env:
+          PGPASSWORD: ci
+        run: |
+          pg_isready -h localhost -p "${APP_PORT}" -U postgres
+          count="$(psql -X -h localhost -p "${APP_PORT}" -U postgres -tAc 'SELECT count(*) FROM shop.products')"
+          echo "products: $count"
+          [ "$count" = 6 ]
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs guide-app

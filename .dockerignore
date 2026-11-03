@@ -1,0 +1,21 @@
+.git
+.github
+**/node_modules
+**/.venv
+**/__pycache__
+**/target
+**/obj
+**/dist
+**/build
+**/coverage
+**/.angular
+**/.next
+*.md
+!README.md
+Dockerfile
+.dockerignore
+
+# Starter project: only sql/, tests/ and scripts/ are needed
+public
+CHANGELOG.md
+releases.json

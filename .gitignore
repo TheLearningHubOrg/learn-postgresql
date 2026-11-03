@@ -1,3 +1,4 @@
+# Kept from the previous starter
 node_modules/
 dist/
 coverage/
@@ -5,3 +6,24 @@ coverage/
 *.log
 .env
 .env.local
+
+# PostgreSQL starter project
+# Local data directories created by initdb or docker volumes
+pgdata/
+data/
+*.dump
+*.backup
+.psql_history
+.lycheecache
+
+# Editors and OS
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+Thumbs.db
+
+# Env files (never commit secrets)
+.env.*
+!.env.example
